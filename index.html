@@ -121,7 +121,7 @@
     function applyFit() {
       const panel = document.querySelector('.panel');
       const availW = wrapEl.clientWidth;
-      const availH = Math.max(100, wrapEl.clientHeight - (panel?.offsetHeight || 0) - 14);
+      const availH = Math.max(100, wrapEl.clientHeight - (panel?.offsetHeight || 0) - 10);
 
       const scale = Math.min(availW / SHEET_BASE_W, availH / SHEET_BASE_H);
 
