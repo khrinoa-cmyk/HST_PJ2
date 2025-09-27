@@ -10,34 +10,24 @@
       margin:0; padding:0; height:100%;
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       background:#fff;
-      /* 핀치/패닝 허용 (브라우저 페이지 줌도 허용) */
       touch-action: pan-x pan-y pinch-zoom;
     }
-
-    /* 확대 시 드래그 이동(스크롤) 가능한 래퍼 */
     .wrap {
       position:relative; width:100%; height:100%;
       overflow:auto; -webkit-overflow-scrolling: touch;
       background:#fff;
     }
-
-    /* 스크롤 영역(스케일에 맞춰 크기 변경) */
     .zoomLayer { position:relative; }
-
-    /* 실제 스케일이 적용되는 레이어(여기에 transform: scale 적용) */
     .scaled {
       position:absolute; top:0; left:0;
-      transform-origin: 0 0;   /* 좌상단 기준 확대/축소 */
+      transform-origin: 0 0;
       background:#fff;
     }
-
-    /* 더블 버퍼 iframe (전환 부드럽게) */
     iframe.viewer {
       position:absolute; inset:0; width:100%; height:100%; border:0;
       transition: opacity .35s ease;
       background:#fff;
     }
-
     .panel {
       position:fixed; left:8px; bottom:8px; z-index:10;
       display:flex; gap:6px; align-items:center; flex-wrap:wrap;
@@ -53,11 +43,8 @@
 </head>
 <body>
   <div class="wrap" id="wrap">
-    <!-- 스크롤/확대 대상 -->
     <div class="zoomLayer" id="zoomLayer">
-      <!-- 스케일이 실제로 적용되는 컨테이너 -->
       <div class="scaled" id="scaled">
-        <!-- 더블 버퍼 (A 표시, B 백업) -->
         <iframe id="frameA" class="viewer" title="Excel Viewer A"></iframe>
         <iframe id="frameB" class="viewer" title="Excel Viewer B" style="opacity:0"></iframe>
       </div>
@@ -65,10 +52,10 @@
   </div>
 
   <div class="panel">
+    <button class="btn" id="fitWidth">폭 맞춤</button>
     <button class="btn" id="zoomOut">–</button>
     <span class="note zoomInfo" id="zoomLabel">100%</span>
     <button class="btn" id="zoomIn">+</button>
-
     <button class="btn" id="manualRefresh">새로고침</button>
     <span class="note" id="status">상태: 준비중</span>
   </div>
@@ -98,7 +85,7 @@
       return base + sep + params.toString();
     }
 
-    // ===== 초기 로드(자동 새로고침 없음) + 수동 새로고침(깜빡임 최소) =====
+    // ===== 초기 로드 & 수동 새로고침(깜빡임 최소) =====
     const frameA = document.getElementById("frameA");
     const frameB = document.getElementById("frameB");
     const statusEl = document.getElementById("status");
@@ -130,24 +117,27 @@
       back.src = url;
     });
 
-    // ===== 스케일 방식 줌(실제 콘텐츠가 확대/축소됨) =====
+    // ===== 스케일 줌 + 폭 맞춤 =====
     const wrapEl   = document.getElementById("wrap");
     const zoomLayer= document.getElementById("zoomLayer");
     const scaledEl = document.getElementById("scaled");
     const zoomLabel= document.getElementById("zoomLabel");
 
-    // 모바일은 좀 작게 시작 (예: 85%), 데스크톱은 100%
+    // 시작 배율: 모바일은 살짝 축소, 데스크톱은 100%
     const IS_MOBILE = window.matchMedia("(max-width: 480px)").matches;
-    let zoom = IS_MOBILE ? 0.85 : 1;  // ← 시작 배율
-    const Z_MIN = 0.5, Z_MAX = 3, Z_STEP = 0.15;
+    let zoom = IS_MOBILE ? 0.9 : 1;
+    const Z_MIN = 0.4, Z_MAX = 3, Z_STEP = 0.15;
 
-    // "실제" 기준 크기(px) — 스케일 1.0일 때의 캔버스 크기
+    // 스케일 1.0 때의 "논리" 크기(px)
     let baseW = 0, baseH = 0;
 
+    // 폭 맞춤 모드: 'width'면 리사이즈 때 자동 재맞춤, 'free'면 수동 확대/축소 유지
+    let fitMode = 'width';
+
     function measureBase(){
+      // 스케일 1 기준 캔버스 크기(한번 잡고, 회전/리사이즈 때 갱신)
       baseW = Math.max(360, wrapEl.clientWidth);
       baseH = Math.max(360, wrapEl.clientHeight);
-      // 스케일 1.0에서의 크기를 지정 (scaledEl은 항상 baseW x baseH)
       scaledEl.style.width  = baseW + "px";
       scaledEl.style.height = baseH + "px";
     }
@@ -155,57 +145,27 @@
     function applyZoom(keepCenter = true){
       const wrapW = wrapEl.clientWidth, wrapH = wrapEl.clientHeight;
 
-      // 현재 중심 비율(확대/축소 후에도 중심 유지)
       const scrollW = zoomLayer.scrollWidth || zoomLayer.offsetWidth || 1;
       const scrollH = zoomLayer.scrollHeight || zoomLayer.offsetHeight || 1;
       const cx = (wrapEl.scrollLeft + wrapW/2) / scrollW;
       const cy = (wrapEl.scrollTop  + wrapH/2) / scrollH;
 
-      // 1) 실제 스케일 적용 (시각 확대/축소)
       scaledEl.style.transform = `scale(${zoom})`;
 
-      // 2) 스크롤 영역을 스케일에 맞춰 재설정
       const visW = Math.round(baseW * zoom);
       const visH = Math.round(baseH * zoom);
       zoomLayer.style.width  = visW + "px";
       zoomLayer.style.height = visH + "px";
 
-      // 3) 중심 유지
       if (keepCenter) {
         const newSL = Math.max(0, Math.round(cx * visW - wrapW/2));
         const newST = Math.max(0, Math.round(cy * visH - wrapH/2));
         wrapEl.scrollTo({ left:newSL, top:newST, behavior:"auto" });
       }
-
       zoomLabel.textContent = Math.round(zoom * 100) + "%";
     }
 
     function zoomTo(z, keepCenter=true){
       zoom = Math.min(Z_MAX, Math.max(Z_MIN, +z));
-      applyZoom(keepCenter);
-    }
-    function zoomIn(){  zoomTo(+(zoom + Z_STEP).toFixed(3), true); }
-    function zoomOut(){ zoomTo(+(zoom - Z_STEP).toFixed(3), true); }
-
-    document.getElementById("zoomIn").addEventListener("click",  zoomIn);
-    document.getElementById("zoomOut").addEventListener("click", zoomOut);
-
-    // 초기 설정
-    measureBase();
-    applyZoom(false);
-
-    // 창 크기 변경 시 기준/스크롤 재계산
-    let rTimer=null;
-    window.addEventListener("resize", () => {
-      clearTimeout(rTimer);
-      rTimer = setTimeout(() => {
-        // 현재 배율 유지한 채로 base 재계산
-        const currentZoom = zoom;
-        measureBase();
-        zoom = currentZoom;
-        applyZoom(true);
-      }, 120);
-    });
-  </script>
-</body>
-</html>
+      fitMode = 'free';           // 수동 조작 시 폭 맞춤 모드 해제
+      applyZ
