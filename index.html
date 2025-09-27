@@ -4,35 +4,48 @@
   <meta charset="UTF-8" />
   <meta name="viewport"
         content="width=device-width, initial-scale=1.0, user-scalable=yes, minimum-scale=0.5, maximum-scale=5, viewport-fit=cover"/>
-  <title>조합원용 실시간 시트 뷰어</title>
+  <title>조합원용 실시간 시트 뷰어 (전체 맞춤 고정)</title>
   <style>
     html, body {
-      margin:0; padding:0; height:100%;
+      margin:0; padding:0;
+      width:100%; height:100%;
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       background:#fff;
       touch-action: pan-x pan-y pinch-zoom;
     }
-    .wrap { position:relative; width:100%; height:100%; overflow:auto; -webkit-overflow-scrolling: touch; background:#fff; }
-    .zoomLayer { position:relative; }
-    .scaled   { position:absolute; top:0; left:0; transform-origin:0 0; background:#fff; }
-    iframe.viewer { position:absolute; inset:0; width:100%; height:100%; border:0; transition:opacity .35s ease; background:#fff; }
+    /* 주소창 변화에도 안정적인 높이를 위해 100dvh 사용 */
+    .wrap {
+      position:relative; width:100%; height:100dvh;
+      overflow:hidden; background:#fff;
+    }
+    .zoomLayer { position:relative; width:100%; height:100%; }
+    /* 스케일을 실제로 거는 레이어 */
+    .scaled {
+      position:absolute; top:0; left:0;
+      transform-origin: 0 0;
+      background:#fff;
+    }
+    iframe.viewer {
+      position:absolute; inset:0; width:100%; height:100%;
+      border:0; background:#fff; transition:opacity .25s ease;
+    }
     .panel {
       position:fixed; left:8px; bottom:8px; z-index:10;
-      display:flex; gap:6px; align-items:center; flex-wrap:wrap;
+      display:flex; gap:8px; align-items:center;
       background:#fffccfdd; backdrop-filter: blur(4px);
-      padding:6px 8px; border-radius:8px; box-shadow:0 2px 10px #0002;
-      font-size:12px; line-height:1.2;
+      padding:6px 10px; border-radius:10px; box-shadow:0 2px 10px #0002;
+      font-size:12px;
     }
-    .btn { cursor:pointer; border:1px solid #ddd; background:#fff; padding:6px 10px; border-radius:6px; }
+    .btn { cursor:pointer; border:1px solid #ddd; background:#fff; padding:6px 10px; border-radius:8px; }
     .btn:hover { background:#f5f5f5; }
     .note { opacity:.75 }
-    .zoomInfo { min-width:64px; text-align:center; }
   </style>
 </head>
 <body>
   <div class="wrap" id="wrap">
     <div class="zoomLayer" id="zoomLayer">
       <div class="scaled" id="scaled">
+        <!-- 더블버퍼: 깜빡임 없이 새로고침 -->
         <iframe id="frameA" class="viewer" title="Excel Viewer A"></iframe>
         <iframe id="frameB" class="viewer" title="Excel Viewer B" style="opacity:0"></iframe>
       </div>
@@ -40,29 +53,26 @@
   </div>
 
   <div class="panel">
-    <button class="btn" id="fitWidth">폭 맞춤</button>
-    <button class="btn" id="fitAll">전체 맞춤</button>
-    <button class="btn" id="zoomOut">–</button>
-    <span class="note zoomInfo" id="zoomLabel">100%</span>
-    <button class="btn" id="zoomIn">+</button>
     <button class="btn" id="manualRefresh">새로고침</button>
     <span class="note" id="status">상태: 준비중</span>
   </div>
 
   <script>
-    // ===== 임베드 URL/옵션 =====
-    const preferredEmbedUrl = ""; // onedrive.live.com/embed?... 또는 sharepoint ...?embed=1 권장
+    /** ===================== 임베드 설정 ===================== */
+    // 가능하면 1drv.ms 단축링크 말고 onedrive.live.com/embed?… 또는 sharepoint …?embed=1 를 쓰세요.
+    const preferredEmbedUrl = ""; // 예: "https://onedrive.live.com/embed?resid=...&authkey=...&em=2"
     const fallbackShortUrl  = "https://1drv.ms/x/c/265c571b25332f3d/IQRYabtwWH1lQLYgLDJn5Nt8ASyHGrA-012f9XXwOlWf1ec";
 
-    // 특수문자 시트명은 작은따옴표로 감싸기
+    // 공유 범위 (특수문자 시트명은 작은따옴표로 감싸기)
+    // 예: "'★참석집계★'!B3:R42"  또는  "Print_Area"
     const SHARE_RANGE = "'★참석집계★'!B3:R42";
 
-    // 상호작용을 끄면(=스냅샷) 화면 맞춤이 더 안정적
-    const INTERACTIVE = true; // 필요 시 false 로 변경
+    // 상호작용이 꼭 필요 없으면 False로 (스냅샷처럼 더 안정적으로 맞춰짐)
+    const INTERACTIVE = false;
 
     const VIEW_OPTIONS = {
       em: "2",
-      wdAllowInteractivity: "False",
+      wdAllowInteractivity: INTERACTIVE ? "True" : "False",
       wdHideGridlines: "True",
       wdHideHeaders: "True",
       wdHideSheetTabs: "True",
@@ -77,7 +87,7 @@
       return base + sep + params.toString();
     }
 
-    // ===== 로드 & 새로고침(더블버퍼) =====
+    /** ===================== 로드/새로고침(더블버퍼) ===================== */
     const frameA = document.getElementById("frameA");
     const frameB = document.getElementById("frameB");
     const statusEl = document.getElementById("status");
@@ -102,20 +112,18 @@
       back.src = url;
     });
 
-    // ===== 외부 스케일(폭/전체 맞춤 + 수동 +/-) =====
+    /** ===================== 전체 맞춤 고정 로직 ===================== */
     const wrapEl   = document.getElementById("wrap");
     const zoomLayer= document.getElementById("zoomLayer");
     const scaledEl = document.getElementById("scaled");
-    const zoomLabel= document.getElementById("zoomLabel");
 
-    // 셀 가로/세로 비율 보정값 (세로가 크게 보이면 0.9, 작으면 1.1~1.2)
-    const CELL_ASPECT_TWEAK = 1.00;
+    // ▼ 셀 폭/높이 추정값(픽셀). 범위의 열너비/행높이가 기본값과 다르면 여기서 미세조정하세요.
+    //    세로가 더 크게 느껴지면 CELL_H를 1~2px 늘리고, 작으면 줄이면 됩니다.
+    const CELL_W = 64;   // 기본 열 폭 근사치
+    const CELL_H = 22;   // 기본 행 높이 근사치
+    const EXTRA_PADDING = 16; // 테두리/여백 보정
 
-    let baseW = 0, baseH = 0;  // 스케일 1.0 기준 크기
-    let zoom  = 1;
-    let fitMode = 'all';       // 시작은 '전체 맞춤'
-    const Z_MIN = 0.4, Z_MAX = 3, Z_STEP = 0.15;
-
+    // '시트!B3:R42' → {cols, rows}
     function colToNum(col){ let n=0; for(const c of col.toUpperCase()) n = n*26 + (c.charCodeAt(0)-64); return n; }
     function parseA1(a1){
       const m = a1.match(/!([A-Za-z]+)(\d+)\s*:\s*([A-Za-z]+)(\d+)/);
@@ -124,87 +132,41 @@
       const c2 = colToNum(m[3]), r2 = +m[4];
       return { cols: Math.abs(c2-c1)+1, rows: Math.abs(r2-r1)+1 };
     }
-    function inferContentAspect(){
-      const m = parseA1(SHARE_RANGE || "");
-      if(!m) return 1.0;
-      return (m.rows / m.cols) * CELL_ASPECT_TWEAK;
+
+    // 스케일 1.0 기준의 "콘텐츠 실제 픽셀 크기"를 추정
+    function getContentBaseSize(){
+      const pr = parseA1(SHARE_RANGE || "");
+      if (!pr) return { w: wrapEl.clientWidth, h: wrapEl.clientHeight };
+      const w = pr.cols * CELL_W + EXTRA_PADDING;
+      const h = pr.rows * CELL_H + EXTRA_PADDING;
+      return { w, h };
     }
 
-    function measureBase(){
-      const W = Math.max(360, wrapEl.clientWidth);
-      const aspect = inferContentAspect();
-      const H = Math.max(360, W * aspect);
-      baseW = W; baseH = H;
+    function fitAllFixed(){
+      const { w:baseW, h:baseH } = getContentBaseSize();
+      // 가용 영역(패널 높이만큼 빼서 계산)
+      const panel = document.querySelector('.panel');
+      const availW = wrapEl.clientWidth;
+      const availH = Math.max(100, wrapEl.clientHeight - (panel?.offsetHeight || 0) - 12);
+
+      const scale = Math.min(availW / baseW, availH / baseH);
+      // 스케일 적용
       scaledEl.style.width  = baseW + "px";
       scaledEl.style.height = baseH + "px";
+      scaledEl.style.transform = `scale(${scale})`;
+      // 스크롤 영역도 동일 크기로 설정
+      zoomLayer.style.width  = Math.round(baseW * scale) + "px";
+      zoomLayer.style.height = Math.round(baseH * scale) + "px";
+      // 좌상단 정렬(필요시 가운데 정렬 하려면 아래 두 줄 대신 margin으로 중앙정렬 처리)
+      wrapEl.scrollTo({left:0, top:0, behavior:"auto"});
     }
 
-    function applyZoom(keepCenter=true){
-      const wrapW = wrapEl.clientWidth, wrapH = wrapEl.clientHeight;
-
-      const scrollW = zoomLayer.scrollWidth || zoomLayer.offsetWidth || 1;
-      const scrollH = zoomLayer.scrollHeight || zoomLayer.offsetHeight || 1;
-      const cx = (wrapEl.scrollLeft + wrapW/2) / scrollW;
-      const cy = (wrapEl.scrollTop  + wrapH/2) / scrollH;
-
-      scaledEl.style.transform = `scale(${zoom})`;
-
-      const visW = Math.round(baseW * zoom);
-      const visH = Math.round(baseH * zoom);
-      zoomLayer.style.width  = visW + "px";
-      zoomLayer.style.height = visH + "px";
-
-      if (keepCenter) {
-        const newSL = Math.max(0, Math.round(cx * visW - wrapW/2));
-        const newST = Math.max(0, Math.round(cy * visH - wrapH/2));
-        wrapEl.scrollTo({ left:newSL, top:newST, behavior:"auto" });
-      }
-      zoomLabel.textContent = Math.round(zoom*100) + "%";
-    }
-
-    function zoomTo(z, keepCenter=true){ zoom = Math.min(Z_MAX, Math.max(Z_MIN, +z)); fitMode='free'; applyZoom(keepCenter); }
-    const zoomIn  = ()=> zoomTo(+(zoom + Z_STEP).toFixed(3), true);
-    const zoomOut = ()=> zoomTo(+(zoom - Z_STEP).toFixed(3), true);
-
-    function fitWidth(applyCenter=false){
-      const wrapW = wrapEl.clientWidth || 1;
-      zoom = +(wrapW / Math.max(baseW,1)).toFixed(3);
-      fitMode='width';
-      applyZoom(applyCenter);
-    }
-    function fitAll(applyCenter=false){
-      const wrapW = wrapEl.clientWidth || 1;
-      const wrapH = wrapEl.clientHeight || 1;
-      const zx = wrapW / Math.max(baseW,1);
-      const zy = wrapH / Math.max(baseH,1);
-      zoom = +Math.min(zx, zy).toFixed(3);
-      fitMode='all';
-      applyZoom(applyCenter);
-    }
-
-    document.getElementById("fitWidth").addEventListener("click", ()=> fitWidth(false));
-    document.getElementById("fitAll").addEventListener("click",  ()=> fitAll(false));
-    document.getElementById("zoomIn").addEventListener("click",  zoomIn);
-    document.getElementById("zoomOut").addEventListener("click", zoomOut);
-
-    // 초기: 기준 산정 → 전체 맞춤
-    measureBase();
-    zoomTo(0.40, false);  // 40%로 강제 시작
-    fitMode = 'free';     // 수동 배율 유지
-    applyZoom(false);
-
-
-    // 회전/리사이즈: 현재 모드 유지(폭맞춤/전체맞춤은 자동 재계산)
+    // 최초/리사이즈 때 항상 전체 맞춤 유지
+    fitAllFixed();
     let rTimer=null;
     window.addEventListener("resize", () => {
       clearTimeout(rTimer);
-      rTimer = setTimeout(() => {
-        const currentMode = fitMode, currentZoom = zoom;
-        measureBase();
-        if (currentMode === 'width')      fitWidth(true);
-        else if (currentMode === 'all')   fitAll(true);
-        else { zoom = currentZoom; applyZoom(true); }
-      }, 120);
+      rTimer = setTimeout(fitAllFixed, 120);
     });
   </script>
 </body>
