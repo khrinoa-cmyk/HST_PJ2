@@ -5,6 +5,13 @@
   <meta name="viewport"
         content="width=device-width, initial-scale=1.0, user-scalable=yes, minimum-scale=0.5, maximum-scale=5, viewport-fit=cover"/>
   <title>조합원용 실시간 시트 뷰어 – 전체맞춤+배율</title>
+
+  <!-- 로딩 최적화(사전 연결) -->
+  <link rel="dns-prefetch" href="//onedrive.live.com">
+  <link rel="dns-prefetch" href="//excel.officeapps.live.com">
+  <link rel="preconnect" href="https://onedrive.live.com" crossorigin>
+  <link rel="preconnect" href="https://excel.officeapps.live.com" crossorigin>
+
   <style>
     html, body {
       margin:0; padding:0; width:100%; height:100%;
@@ -19,11 +26,10 @@
       position:absolute; top:0; left:0;
       transform-origin: 0 0;
       background:#fff;
-      /* 그림자 살짝(선택) */
-      /* box-shadow:0 0 0 1px #0001; */
     }
     iframe.viewer {
-      position:absolute; inset:0; width:100%; height:100%; border:0; background:#fff; transition:opacity .25s ease;
+      position:absolute; inset:0; width:100%; height:100%;
+      border:0; background:#fff; transition:opacity .25s ease;
     }
     .panel {
       position:fixed; left:8px; bottom:8px; z-index:10;
@@ -43,8 +49,10 @@
     <div class="stage" id="stage">
       <div class="scaled" id="scaled">
         <!-- 더블버퍼: 깜빡임 없이 새로고침 -->
-        <iframe id="frameA" class="viewer" title="Excel Viewer A"></iframe>
-        <iframe id="frameB" class="viewer" title="Excel Viewer B" style="opacity:0"></iframe>
+        <iframe id="frameA" class="viewer" title="Excel Viewer A"
+                loading="eager" fetchpriority="high"></iframe>
+        <iframe id="frameB" class="viewer" title="Excel Viewer B" style="opacity:0"
+                loading="eager" fetchpriority="high"></iframe>
       </div>
     </div>
   </div>
@@ -59,33 +67,9 @@
   </div>
 
   <script>
-    /* ================== 임베드 설정 ================== */
-    // 가능하면 단축링크(1drv.ms) 대신 onedrive.live.com/embed?... 또는 sharepoint …?embed=1 사용 권장
-    const preferredEmbedUrl = "";
-    const fallbackShortUrl  = "https://1drv.ms/x/c/265c571b25332f3d/IQRYabtwWH1lQLYgLDJn5Nt8ASyHGrA-012f9XXwOlWf1ec";
-
-    // 공유 범위 (특수문자 시트명은 작은따옴표)
-    const SHARE_RANGE = "'★참석집계★'!B3:R42";
-
-    // 인터랙션이 꼭 필요없다면 false (스냅샷처럼 고정되어 맞춤이 더 안정적)
-    const INTERACTIVE = false;
-
-    const VIEW_OPTIONS = {
-      em: "2",
-      wdAllowInteractivity: INTERACTIVE ? "True" : "False",
-      wdHideGridlines: "True",
-      wdHideHeaders: "True",
-      wdHideSheetTabs: "True",
-      wdDownloadButton: "False"
-    };
-
-    function buildEmbedUrl() {
-      const base = preferredEmbedUrl || fallbackShortUrl;
-      const params = new URLSearchParams(VIEW_OPTIONS);
-      if (SHARE_RANGE) params.set("Item", SHARE_RANGE);
-      const sep = base.includes("?") ? "&" : "?";
-      return base + sep + params.toString();
-    }
+    /* ================== 임베드 URL (사용자 제공) ================== */
+    const EMBED_SRC =
+      "https://onedrive.live.com/embed?resid=265C571B25332F3D!s70bb69587d584065b6202c3267e4db7c&em=2&Item=%27%E2%98%85%EC%B0%B8%EC%84%9D%EC%A7%91%EA%B3%84%E2%98%85%27!B3%3AR42&wdHideHeaders=True&wdHideSheetTabs=True&wdHideGridlines=True";
 
     /* ================== 로드/새로고침(더블버퍼) ================== */
     const frameA = document.getElementById("frameA");
@@ -94,21 +78,28 @@
     const setStatus = (t)=> statusEl.textContent = "상태: " + t;
 
     (function initialLoad(){
-      const url = buildEmbedUrl();
       setStatus("로드 중…");
       let a=false, b=false;
       frameA.onload = ()=>{ a=true; if(b) setStatus("완료"); };
       frameB.onload = ()=>{ b=true; if(a) setStatus("완료"); };
-      frameA.src = url; frameB.src = url;
+      frameA.src = EMBED_SRC;   // 표시
+      frameB.src = EMBED_SRC;   // 프리로드
     })();
 
+    // 수동 새로고침(백그라운드 로드 후 스왑)
     document.getElementById("manualRefresh").addEventListener("click", () => {
-      const base = buildEmbedUrl();
-      const url  = base + (base.includes("?") ? "&" : "?") + "t=" + Date.now();
+      const sep = EMBED_SRC.includes("?") ? "&" : "?";
+      const url = EMBED_SRC + sep + "t=" + Date.now(); // 저장 반영 강제 캐시 무력화
       const front = (getComputedStyle(frameA).opacity !== "0") ? frameA : frameB;
       const back  = (front === frameA) ? frameB : frameA;
+
       setStatus("새로고침 중…");
-      back.onload = () => { back.style.opacity = "1"; front.style.opacity = "0"; back.onload = null; setStatus("완료"); };
+      back.onload = () => {
+        back.style.opacity = "1";
+        front.style.opacity = "0";
+        back.onload = null;
+        setStatus("완료");
+      };
       back.src = url;
     });
 
@@ -118,27 +109,22 @@
     const scaledEl = document.getElementById("scaled");
     const zoomLabel= document.getElementById("zoomLabel");
 
-    // --------- 여기만 맞추면 끝! ---------
-    // 보고서의 "세로/가로 비율". 스크린샷 기준 약 1.32가 근접.
-    const SHEET_ASPECT = 1.32;  // ← 1.28~1.36 사이에서 0.01씩 조정해보세요
-    const SHEET_BASE_W = 1000;  // 내부 기준 가로(px) (임의 값, 비율만 중요)
+    // 보고서의 "세로/가로 비율" (필요시 0.01씩 미세조정)
+    const SHEET_ASPECT = 1.32;   // 예: 1.28~1.36 사이
+    const SHEET_BASE_W = 1000;   // 내부 기준 가로(px) (임의값, 비율만 중요)
     const SHEET_BASE_H = Math.round(SHEET_BASE_W * SHEET_ASPECT);
-    // -----------------------------------
 
-    let mode = "fit";     // 'fit' | 'free'
-    let zoom = 1;         // free 모드에서의 배율
+    let mode = "fit";            // 'fit' | 'free'
+    let zoom = 1;                // free 모드에서의 배율
     const Z_MIN = 0.3, Z_MAX = 3, Z_STEP = 0.15;
 
     function applyFit() {
-      // 패널 높이만큼 가용 높이에서 제외(겹쳐보이면 빼지 않아도 됨)
       const panel = document.querySelector('.panel');
       const availW = wrapEl.clientWidth;
       const availH = Math.max(100, wrapEl.clientHeight - (panel?.offsetHeight || 0) - 10);
 
-      // contain 배율
       const scale = Math.min(availW / SHEET_BASE_W, availH / SHEET_BASE_H);
 
-      // 중앙정렬 offset
       const usedW = SHEET_BASE_W * scale;
       const usedH = SHEET_BASE_H * scale;
       const offX = Math.max(0, Math.floor((availW - usedW) / 2));
@@ -150,7 +136,6 @@
       scaledEl.style.left = offX + "px";
       scaledEl.style.top  = offY + "px";
 
-      // 스크롤 없이 딱 고정
       stageEl.style.width  = availW + "px";
       stageEl.style.height = availH + "px";
       wrapEl.scrollTo({left:0, top:0, behavior:"auto"});
@@ -161,12 +146,10 @@
     function applyFree(keepCenter=true) {
       const wrapW = wrapEl.clientWidth, wrapH = wrapEl.clientHeight;
 
-      // 현재 위치 기준 중심 유지
       const viewW = stageEl.clientWidth, viewH = stageEl.clientHeight;
       const cx = (wrapEl.scrollLeft + wrapW/2) / Math.max(viewW,1);
       const cy = (wrapEl.scrollTop  + wrapH/2) / Math.max(viewH,1);
 
-      // 실제 크기 + 스케일
       const visW = Math.round(SHEET_BASE_W * zoom);
       const visH = Math.round(SHEET_BASE_H * zoom);
 
@@ -176,7 +159,6 @@
       scaledEl.style.left = "0px";
       scaledEl.style.top  = "0px";
 
-      // 패닝 가능하도록 스테이지를 콘텐츠 크기로
       stageEl.style.width  = visW + "px";
       stageEl.style.height = visH + "px";
 
