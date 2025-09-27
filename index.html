@@ -12,22 +12,10 @@
       background:#fff;
       touch-action: pan-x pan-y pinch-zoom;
     }
-    .wrap {
-      position:relative; width:100%; height:100%;
-      overflow:auto; -webkit-overflow-scrolling: touch;
-      background:#fff;
-    }
+    .wrap { position:relative; width:100%; height:100%; overflow:auto; -webkit-overflow-scrolling: touch; background:#fff; }
     .zoomLayer { position:relative; }
-    .scaled {
-      position:absolute; top:0; left:0;
-      transform-origin: 0 0;
-      background:#fff;
-    }
-    iframe.viewer {
-      position:absolute; inset:0; width:100%; height:100%; border:0;
-      transition: opacity .35s ease;
-      background:#fff;
-    }
+    .scaled { position:absolute; top:0; left:0; transform-origin:0 0; background:#fff; }
+    iframe.viewer { position:absolute; inset:0; width:100%; height:100%; border:0; transition:opacity .35s ease; background:#fff; }
     .panel {
       position:fixed; left:8px; bottom:8px; z-index:10;
       display:flex; gap:6px; align-items:center; flex-wrap:wrap;
@@ -53,6 +41,7 @@
 
   <div class="panel">
     <button class="btn" id="fitWidth">폭 맞춤</button>
+    <button class="btn" id="fitAll">전체 맞춤</button>
     <button class="btn" id="zoomOut">–</button>
     <span class="note zoomInfo" id="zoomLabel">100%</span>
     <button class="btn" id="zoomIn">+</button>
@@ -66,15 +55,13 @@
     const fallbackShortUrl  = "https://1drv.ms/x/c/265c571b25332f3d/IQRYabtwWH1lQLYgLDJn5Nt8ASyHGrA-012f9XXwOlWf1ec";
 
     // ★ 특수문자 시트명은 작은따옴표로 감싸기
+    //    예:  '★참석집계★'!B3:R42  또는  이름정의 "Print_Area"
     const SHARE_RANGE = "'★참석집계★'!B3:R42";
 
     const VIEW_OPTIONS = {
-      em: "2",
-      wdAllowInteractivity: "True",
-      wdHideGridlines: "True",
-      wdHideHeaders: "True",
-      wdHideSheetTabs: "True",
-      wdDownloadButton: "False"
+      em: "2", wdAllowInteractivity: "True",
+      wdHideGridlines: "True", wdHideHeaders: "True",
+      wdHideSheetTabs: "True", wdDownloadButton: "False"
     };
 
     function buildEmbedUrl() {
@@ -85,20 +72,19 @@
       return base + sep + params.toString();
     }
 
-    // ===== 초기 로드 & 수동 새로고침(깜빡임 최소) =====
+    // ===== 로드 & 새로고침 =====
     const frameA = document.getElementById("frameA");
     const frameB = document.getElementById("frameB");
     const statusEl = document.getElementById("status");
-    function setStatus(t){ statusEl.textContent = "상태: " + t; }
+    const setStatus = (t)=> statusEl.textContent = "상태: " + t;
 
     (function initialLoad(){
       const url = buildEmbedUrl();
       setStatus("로드 중…");
-      let doneA=false, doneB=false;
-      frameA.onload = () => { doneA=true; if (doneB) setStatus("완료"); };
-      frameB.onload = () => { doneB=true; if (doneA) setStatus("완료"); };
-      frameA.src = url;  // 표시
-      frameB.src = url;  // 프리로드
+      let a=false, b=false;
+      frameA.onload = ()=>{ a=true; if(b) setStatus("완료"); };
+      frameB.onload = ()=>{ b=true; if(a) setStatus("완료"); };
+      frameA.src = url; frameB.src = url;
     })();
 
     document.getElementById("manualRefresh").addEventListener("click", () => {
@@ -106,43 +92,59 @@
       const url  = base + (base.includes("?") ? "&" : "?") + "t=" + Date.now();
       const front = (getComputedStyle(frameA).opacity !== "0") ? frameA : frameB;
       const back  = (front === frameA) ? frameB : frameA;
-
       setStatus("새로고침 중…");
-      back.onload = () => {
-        back.style.opacity = "1";
-        front.style.opacity = "0";
-        back.onload = null;
-        setStatus("완료");
-      };
+      back.onload = () => { back.style.opacity = "1"; front.style.opacity = "0"; back.onload = null; setStatus("완료"); };
       back.src = url;
     });
 
-    // ===== 스케일 줌 + 폭 맞춤 =====
+    // ===== 줌/맞춤 =====
     const wrapEl   = document.getElementById("wrap");
     const zoomLayer= document.getElementById("zoomLayer");
     const scaledEl = document.getElementById("scaled");
     const zoomLabel= document.getElementById("zoomLabel");
 
-    // 시작 배율: 모바일은 살짝 축소, 데스크톱은 100%
-    const IS_MOBILE = window.matchMedia("(max-width: 480px)").matches;
-    let zoom = IS_MOBILE ? 0.9 : 1;
-    const Z_MIN = 0.4, Z_MAX = 3, Z_STEP = 0.15;
+    // 사용자 취향에 따라 약간 보정 (행 높이 : 열 너비 비)
+    // 기본 1.00, 세로가 더 크게 보이면 0.9, 작으면 1.1~1.2 등으로 조절
+    const CELL_ASPECT_TWEAK = 1.00;
 
     // 스케일 1.0 때의 "논리" 크기(px)
     let baseW = 0, baseH = 0;
+    let zoom = 1;
+    const Z_MIN = 0.4, Z_MAX = 3, Z_STEP = 0.15;
+    let fitMode = 'width'; // 'width' | 'all' | 'free'
 
-    // 폭 맞춤 모드: 'width'면 리사이즈 때 자동 재맞춤, 'free'면 수동 확대/축소 유지
-    let fitMode = 'width';
+    // A1 범위 파서: '시트'!B3:R42 → {cols:17, rows:40}
+    function colToNum(col){
+      let n=0; for(const c of col.toUpperCase()) n = n*26 + (c.charCodeAt(0)-64); return n;
+    }
+    function parseA1(a1){
+      const m = a1.match(/!([A-Za-z]+)(\d+)\s*:\s*([A-Za-z]+)(\d+)/);
+      if(!m) return null;
+      const c1 = colToNum(m[1]), r1 = +m[2];
+      const c2 = colToNum(m[3]), r2 = +m[4];
+      const cols = Math.max(1, Math.abs(c2-c1)+1);
+      const rows = Math.max(1, Math.abs(r2-r1)+1);
+      return { cols, rows };
+    }
+
+    // 콘텐츠 기준 비율 추정(행/열 비율 → 세로/가로 비율)
+    function inferContentAspect(){
+      const m = parseA1(SHARE_RANGE || "");
+      if(!m) return 1.0; // 알 수 없으면 정사각 추정
+      return (m.rows / m.cols) * CELL_ASPECT_TWEAK;
+    }
 
     function measureBase(){
-      // 스케일 1 기준 캔버스 크기(한번 잡고, 회전/리사이즈 때 갱신)
-      baseW = Math.max(360, wrapEl.clientWidth);
-      baseH = Math.max(360, wrapEl.clientHeight);
+      const W = Math.max(360, wrapEl.clientWidth);
+      const aspect = inferContentAspect();     // 높이/너비 비
+      const H = Math.max(360, W * aspect);     // 콘텐츠 전체가 들어가도록 가상의 크기 산정
+      baseW = W;
+      baseH = H;
       scaledEl.style.width  = baseW + "px";
       scaledEl.style.height = baseH + "px";
     }
 
-    function applyZoom(keepCenter = true){
+    function applyZoom(keepCenter=true){
       const wrapW = wrapEl.clientWidth, wrapH = wrapEl.clientHeight;
 
       const scrollW = zoomLayer.scrollWidth || zoomLayer.offsetWidth || 1;
@@ -162,10 +164,53 @@
         const newST = Math.max(0, Math.round(cy * visH - wrapH/2));
         wrapEl.scrollTo({ left:newSL, top:newST, behavior:"auto" });
       }
-      zoomLabel.textContent = Math.round(zoom * 100) + "%";
+      zoomLabel.textContent = Math.round(zoom*100) + "%";
     }
 
-    function zoomTo(z, keepCenter=true){
-      zoom = Math.min(Z_MAX, Math.max(Z_MIN, +z));
-      fitMode = 'free';           // 수동 조작 시 폭 맞춤 모드 해제
-      applyZ
+    function zoomTo(z, keepCenter=true){ zoom = Math.min(Z_MAX, Math.max(Z_MIN, +z)); fitMode='free'; applyZoom(keepCenter); }
+    function zoomIn(){  zoomTo(+(zoom + Z_STEP).toFixed(3), true); }
+    function zoomOut(){ zoomTo(+(zoom - Z_STEP).toFixed(3), true); }
+
+    // 폭 맞춤 = 화면 폭 기준으로 배율 산정
+    function fitWidth(applyCenter=false){
+      const wrapW = wrapEl.clientWidth || 1;
+      zoom = +(wrapW / Math.max(baseW,1)).toFixed(3);
+      fitMode='width';
+      applyZoom(applyCenter);
+    }
+
+    // 전체 맞춤(가로/세로 모두 고려 = contain)
+    function fitAll(applyCenter=false){
+      const wrapW = wrapEl.clientWidth || 1;
+      const wrapH = wrapEl.clientHeight || 1;
+      const zx = wrapW / Math.max(baseW,1);
+      const zy = wrapH / Math.max(baseH,1);
+      zoom = +Math.min(zx, zy).toFixed(3);
+      fitMode='all';
+      applyZoom(applyCenter);
+    }
+
+    document.getElementById("fitWidth").addEventListener("click", ()=> fitWidth(false));
+    document.getElementById("fitAll").addEventListener("click",  ()=> fitAll(false));
+    document.getElementById("zoomIn").addEventListener("click",  zoomIn);
+    document.getElementById("zoomOut").addEventListener("click", zoomOut);
+
+    // 초기: 콘텐츠 비율로 기준 산정 → 전체 맞춤 시작
+    measureBase();
+    fitAll(false);
+
+    // 회전/리사이즈: 현재 모드 유지(폭맞춤/전체맞춤은 자동 재계산)
+    let rTimer=null;
+    window.addEventListener("resize", () => {
+      clearTimeout(rTimer);
+      rTimer = setTimeout(() => {
+        const currentMode = fitMode, currentZoom = zoom;
+        measureBase();
+        if (currentMode === 'width')      fitWidth(true);
+        else if (currentMode === 'all')   fitAll(true);
+        else { zoom = currentZoom; applyZoom(true); }
+      }, 120);
+    });
+  </script>
+</body>
+</html>
