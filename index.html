@@ -6,38 +6,20 @@
         content="width=device-width, initial-scale=1.0, user-scalable=yes, minimum-scale=0.5, maximum-scale=5, viewport-fit=cover"/>
   <title>조합원용 실시간 시트 뷰어 – 전체맞춤+배율</title>
 
-  <!-- 로딩 최적화(사전 연결) -->
   <link rel="dns-prefetch" href="//onedrive.live.com">
   <link rel="dns-prefetch" href="//view.officeapps.live.com">
   <link rel="preconnect" href="https://onedrive.live.com" crossorigin>
   <link rel="preconnect" href="https://view.officeapps.live.com" crossorigin>
 
   <style>
-    html, body {
-      margin:0; padding:0; width:100%; height:100%;
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-      background:#fff;
-      touch-action: pan-x pan-y pinch-zoom;
-    }
-    /* 주소창 변동에도 안정적인 높이 */
+    html, body { margin:0; padding:0; width:100%; height:100%;
+      font-family: system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; background:#fff; touch-action: pan-x pan-y pinch-zoom; }
     .wrap { position:relative; width:100%; height:100dvh; overflow:auto; background:#fff; -webkit-overflow-scrolling:touch; }
     .stage { position:relative; width:100%; height:100%; }
-    .scaled {
-      position:absolute; top:0; left:0;
-      transform-origin: 0 0;
-      background:#fff;
-    }
-    iframe.viewer {
-      position:absolute; inset:0; width:100%; height:100%;
-      border:0; background:#fff; transition:opacity .25s ease;
-    }
-    .panel {
-      position:fixed; left:8px; bottom:8px; z-index:10;
-      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-      background:#fffccfdd; backdrop-filter: blur(4px);
-      padding:6px 10px; border-radius:10px; box-shadow:0 2px 10px #0002;
-      font-size:12px;
-    }
+    .scaled { position:absolute; top:0; left:0; transform-origin:0 0; background:#fff; }
+    iframe.viewer { position:absolute; inset:0; width:100%; height:100%; border:0; background:#fff; transition:opacity .25s ease; }
+    .panel { position:fixed; left:8px; bottom:8px; z-index:10; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+      background:#fffccfdd; backdrop-filter: blur(4px); padding:6px 10px; border-radius:10px; box-shadow:0 2px 10px #0002; font-size:12px; }
     .btn { cursor:pointer; border:1px solid #ddd; background:#fff; padding:6px 10px; border-radius:8px; }
     .btn:hover { background:#f5f5f5; }
     .note { opacity:.75 }
@@ -48,11 +30,8 @@
   <div class="wrap" id="wrap">
     <div class="stage" id="stage">
       <div class="scaled" id="scaled">
-        <!-- 더블버퍼: 깜빡임 없이 새로고침 -->
-        <iframe id="frameA" class="viewer" title="Excel Viewer A"
-                loading="eager" fetchpriority="high"></iframe>
-        <iframe id="frameB" class="viewer" title="Excel Viewer B" style="opacity:0"
-                loading="eager" fetchpriority="high"></iframe>
+        <iframe id="frameA" class="viewer" title="Excel Viewer A" loading="eager" fetchpriority="high"></iframe>
+        <iframe id="frameB" class="viewer" title="Excel Viewer B" style="opacity:0" loading="eager" fetchpriority="high"></iframe>
       </div>
     </div>
   </div>
@@ -67,70 +46,107 @@
   </div>
 
   <script>
-    /* ================== 임베드 URL: 1drv.ms → 정식 임베드 ================== */
-    // 1drv.ms 단축 공유 링크 (사용자 제공)
-    const RAW_SHARE_URL =
-      "https://1drv.ms/x/c/265c571b25332f3d/IQRYabtwWH1lQLYgLDJn5Nt8ASyHGrA-012f9XXwOlWf1ec";
+    /* ========== ① URL 후보 설정 ========== */
+    // (가능하면 채우세요) 정식 임베드: onedrive.live.com/embed?resid=...&authkey=!....&em=2
+    const ONEDRIVE_EMBED_URL = ""; // 예: "https://onedrive.live.com/embed?resid=...&authkey=!XXXX&em=2"
 
-    // 범위 고정(필요시 수정: 시트명에 특수문자 있으면 작은따옴표로 감싸기)
-    // 예) "'★참석집계★'!B3:R42"  /  전체 시트면 "Sheet1"
+    // 현재 사용 중인 1drv.ms 단축 링크
+    const RAW_SHARE_URL = "https://1drv.ms/x/c/265c571b25332f3d/IQRYabtwWH1lQLYgLDJn5Nt8ASyHGrA-012f9XXwOlWf1ec";
+
+    // 범위 고정(시트명 특수문자는 작은따옴표로 감싸기)
     const ITEM_RANGE = "'★참석집계★'!B3:R42";
 
-    // view.officeapps 임베드(로그인 요구 줄고, 단축링크도 동작)
-    const BASE_EMBED =
-      "https://view.officeapps.live.com/op/embed.aspx?src="
-      + encodeURIComponent(RAW_SHARE_URL)
-      + "&ui=ko-KR&rs=ko-KR"
-      + "&wdAllowInteractivity=False"
-      + "&wdHideHeaders=True&wdHideSheetTabs=True&wdHideGridlines=True";
+    // 보기 옵션
+    const OPTS = "&wdHideHeaders=True&wdHideSheetTabs=True&wdHideGridlines=True";
 
-    const EMBED_SRC = BASE_EMBED + (ITEM_RANGE ? "&Item=" + encodeURIComponent(ITEM_RANGE) : "");
+    // Office Viewer(권장 대체)
+    const OFFICE_VIEWER = "https://view.officeapps.live.com/op/embed.aspx?src="
+      + encodeURIComponent(RAW_SHARE_URL) + "&ui=ko-KR&rs=ko-KR&wdAllowInteractivity=False" + OPTS
+      + (ITEM_RANGE ? "&Item=" + encodeURIComponent(ITEM_RANGE) : "");
 
-    /* ================== 로드/새로고침(더블버퍼) ================== */
+    // 정식 임베드가 있으면 최우선, 없으면 Office Viewer → 마지막으로 1drv.ms 직접
+    const CANDIDATES = [];
+    if (ONEDRIVE_EMBED_URL) {
+      CANDIDATES.push(ONEDRIVE_EMBED_URL + OPTS + (ITEM_RANGE ? "&Item=" + encodeURIComponent(ITEM_RANGE) : ""));
+    }
+    CANDIDATES.push(OFFICE_VIEWER);
+    CANDIDATES.push(RAW_SHARE_URL); // 최후의 보루(환경에 따라 로그인 유도 가능)
+
+    /* ========== ② 더블버퍼 + 실패시 자동 대체 ========== */
     const frameA = document.getElementById("frameA");
     const frameB = document.getElementById("frameB");
     const statusEl = document.getElementById("status");
     const setStatus = (t)=> statusEl.textContent = "상태: " + t;
+    let currentIdx = 0;
 
-    (function initialLoad(){
-      setStatus("로드 중…");
-      let a=false, b=false;
-      frameA.onload = ()=>{ a=true; if(b) setStatus("완료"); };
-      frameB.onload = ()=>{ b=true; if(a) setStatus("완료"); };
-      frameA.src = EMBED_SRC;   // 표시
-      frameB.src = EMBED_SRC;   // 프리로드
-    })();
+    function loadCandidate(idx, target, onSuccess, onFail){
+      const src = CANDIDATES[idx];
+      const sep = src.includes("?") ? "&" : "?";
+      // 캐시 무력화
+      const url = src + sep + "t=" + Date.now();
 
-    // 수동 새로고침(백그라운드 로드 후 스왑)
+      let ok = false;
+      const timer = setTimeout(() => { if(!ok) onFail && onFail(); }, 8000); // 8초 내 미로드 시 실패 간주
+
+      target.onload = () => { clearTimeout(timer); ok = true; onSuccess && onSuccess(); target.onload = null; };
+
+      // 일부 인앱 브라우저 호환
+      target.referrerPolicy = "no-referrer";
+      target.src = url;
+    }
+
+    function initialLoad(){
+      setStatus("로드 중… (시도 " + (currentIdx+1) + "/" + CANDIDATES.length + ")");
+      // A로 시도
+      loadCandidate(currentIdx, frameA, () => {
+        // 성공 시 B도 같은 소스로 미리 로드
+        frameB.src = frameA.src;
+        setStatus("완료");
+      }, () => {
+        // 실패 → 다음 후보
+        currentIdx++;
+        if (currentIdx < CANDIDATES.length) {
+          initialLoad();
+        } else {
+          setStatus("로딩 실패(공유/권한/링크 확인 필요)");
+        }
+      });
+    }
+    initialLoad();
+
+    // 수동 새로고침(현재 후보 유지, 캐시 무력화)
     document.getElementById("manualRefresh").addEventListener("click", () => {
-      const sep = EMBED_SRC.includes("?") ? "&" : "?";
-      const url = EMBED_SRC + sep + "t=" + Date.now(); // 캐시 무력화
       const front = (getComputedStyle(frameA).opacity !== "0") ? frameA : frameB;
       const back  = (front === frameA) ? frameB : frameA;
-
       setStatus("새로고침 중…");
-      back.onload = () => {
+      loadCandidate(currentIdx, back, () => {
         back.style.opacity = "1";
         front.style.opacity = "0";
-        back.onload = null;
         setStatus("완료");
-      };
-      back.src = url;
+      }, () => {
+        // 현재 후보가 실패하면 다음 후보로 자동 전환
+        currentIdx = Math.min(currentIdx+1, CANDIDATES.length-1);
+        setStatus("대체 링크로 재시도 중…");
+        loadCandidate(currentIdx, back, () => {
+          back.style.opacity = "1";
+          front.style.opacity = "0";
+          setStatus("완료(대체 링크)");
+        }, () => setStatus("새로고침 실패(공유/권한 확인)"));
+      });
     });
 
-    /* ================== 전체맞춤 + 배율 ================== */
-    const wrapEl   = document.getElementById("wrap");
-    const stageEl  = document.getElementById("stage");
+    /* ========== ③ 전체맞춤 + 배율 ========== */
+    const wrapEl = document.getElementById("wrap");
+    const stageEl = document.getElementById("stage");
     const scaledEl = document.getElementById("scaled");
-    const zoomLabel= document.getElementById("zoomLabel");
+    const zoomLabel = document.getElementById("zoomLabel");
 
-    // 보고서의 "세로/가로 비율" (필요시 0.01씩 미세조정)
-    const SHEET_ASPECT = 1.32;
-    const SHEET_BASE_W = 1000;                 // 임의 기준 가로(px)
+    const SHEET_ASPECT = 1.32;   // 필요 시 0.01 단위로 미세조정
+    const SHEET_BASE_W = 1000;
     const SHEET_BASE_H = Math.round(SHEET_BASE_W * SHEET_ASPECT);
 
-    let mode = "fit";            // 'fit' | 'free'
-    let zoom = 1;                // free 모드에서의 배율
+    let mode = "fit";
+    let zoom = 1;
     const Z_MIN = 0.3, Z_MAX = 3, Z_STEP = 0.15;
 
     function applyFit() {
@@ -140,8 +156,7 @@
 
       const scale = Math.min(availW / SHEET_BASE_W, availH / SHEET_BASE_H);
 
-      const usedW = SHEET_BASE_W * scale;
-      const usedH = SHEET_BASE_H * scale;
+      const usedW = SHEET_BASE_W * scale, usedH = SHEET_BASE_H * scale;
       const offX = Math.max(0, Math.floor((availW - usedW) / 2));
       const offY = Math.max(0, Math.floor((availH - usedH) / 2));
 
@@ -160,7 +175,6 @@
 
     function applyFree(keepCenter=true) {
       const wrapW = wrapEl.clientWidth, wrapH = wrapEl.clientHeight;
-
       const viewW = stageEl.clientWidth, viewH = stageEl.clientHeight;
       const cx = (wrapEl.scrollLeft + wrapW/2) / Math.max(viewW,1);
       const cy = (wrapEl.scrollTop  + wrapH/2) / Math.max(viewH,1);
@@ -186,11 +200,7 @@
     }
 
     function fitAll(){ mode="fit"; applyFit(); }
-    function zoomTo(z, keepCenter=true){
-      mode="free";
-      zoom = Math.min(Z_MAX, Math.max(Z_MIN, +z));
-      applyFree(keepCenter);
-    }
+    function zoomTo(z, keepCenter=true){ mode="free"; zoom = Math.min(Z_MAX, Math.max(Z_MIN, +z)); applyFree(keepCenter); }
     const zoomIn  = ()=> zoomTo(+(zoom + Z_STEP).toFixed(3), true);
     const zoomOut = ()=> zoomTo(+(zoom - Z_STEP).toFixed(3), true);
 
@@ -198,16 +208,11 @@
     document.getElementById("zoomIn").addEventListener("click",  zoomIn);
     document.getElementById("zoomOut").addEventListener("click", zoomOut);
 
-    // 초기: 전체맞춤 고정
     fitAll();
-
-    // 회전/리사이즈 시: 모드 유지
     let rTimer=null;
     window.addEventListener("resize", () => {
       clearTimeout(rTimer);
-      rTimer = setTimeout(() => {
-        if (mode === "fit") applyFit(); else applyFree(true);
-      }, 120);
+      rTimer = setTimeout(() => { if (mode === "fit") applyFit(); else applyFree(true); }, 120);
     });
   </script>
 </body>
