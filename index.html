@@ -62,7 +62,7 @@
 
     const VIEW_OPTIONS = {
       em: "2",
-      wdAllowInteractivity: INTERACTIVE ? "True" : "False",
+      wdAllowInteractivity: "False",
       wdHideGridlines: "True",
       wdHideHeaders: "True",
       wdHideSheetTabs: "True",
@@ -189,7 +189,10 @@
 
     // 초기: 기준 산정 → 전체 맞춤
     measureBase();
-    fitAll(false);
+    zoomTo(0.40, false);  // 40%로 강제 시작
+    fitMode = 'free';     // 수동 배율 유지
+    applyZoom(false);
+
 
     // 회전/리사이즈: 현재 모드 유지(폭맞춤/전체맞춤은 자동 재계산)
     let rTimer=null;
