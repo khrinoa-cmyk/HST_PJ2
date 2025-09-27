@@ -8,9 +8,9 @@
 
   <!-- 로딩 최적화(사전 연결) -->
   <link rel="dns-prefetch" href="//onedrive.live.com">
-  <link rel="dns-prefetch" href="//excel.officeapps.live.com">
+  <link rel="dns-prefetch" href="//view.officeapps.live.com">
   <link rel="preconnect" href="https://onedrive.live.com" crossorigin>
-  <link rel="preconnect" href="https://excel.officeapps.live.com" crossorigin>
+  <link rel="preconnect" href="https://view.officeapps.live.com" crossorigin>
 
   <style>
     html, body {
@@ -67,9 +67,24 @@
   </div>
 
   <script>
-    /* ================== 임베드 URL (사용자 제공) ================== */
-    const EMBED_SRC =
-      "https://onedrive.live.com/embed?resid=265C571B25332F3D!s70bb69587d584065b6202c3267e4db7c&em=2&Item=%27%E2%98%85%EC%B0%B8%EC%84%9D%EC%A7%91%EA%B3%84%E2%98%85%27!B3%3AR42&wdHideHeaders=True&wdHideSheetTabs=True&wdHideGridlines=True";
+    /* ================== 임베드 URL: 1drv.ms → 정식 임베드 ================== */
+    // 1drv.ms 단축 공유 링크 (사용자 제공)
+    const RAW_SHARE_URL =
+      "https://1drv.ms/x/c/265c571b25332f3d/IQRYabtwWH1lQLYgLDJn5Nt8ASyHGrA-012f9XXwOlWf1ec";
+
+    // 범위 고정(필요시 수정: 시트명에 특수문자 있으면 작은따옴표로 감싸기)
+    // 예) "'★참석집계★'!B3:R42"  /  전체 시트면 "Sheet1"
+    const ITEM_RANGE = "'★참석집계★'!B3:R42";
+
+    // view.officeapps 임베드(로그인 요구 줄고, 단축링크도 동작)
+    const BASE_EMBED =
+      "https://view.officeapps.live.com/op/embed.aspx?src="
+      + encodeURIComponent(RAW_SHARE_URL)
+      + "&ui=ko-KR&rs=ko-KR"
+      + "&wdAllowInteractivity=False"
+      + "&wdHideHeaders=True&wdHideSheetTabs=True&wdHideGridlines=True";
+
+    const EMBED_SRC = BASE_EMBED + (ITEM_RANGE ? "&Item=" + encodeURIComponent(ITEM_RANGE) : "");
 
     /* ================== 로드/새로고침(더블버퍼) ================== */
     const frameA = document.getElementById("frameA");
@@ -89,7 +104,7 @@
     // 수동 새로고침(백그라운드 로드 후 스왑)
     document.getElementById("manualRefresh").addEventListener("click", () => {
       const sep = EMBED_SRC.includes("?") ? "&" : "?";
-      const url = EMBED_SRC + sep + "t=" + Date.now(); // 저장 반영 강제 캐시 무력화
+      const url = EMBED_SRC + sep + "t=" + Date.now(); // 캐시 무력화
       const front = (getComputedStyle(frameA).opacity !== "0") ? frameA : frameB;
       const back  = (front === frameA) ? frameB : frameA;
 
@@ -110,8 +125,8 @@
     const zoomLabel= document.getElementById("zoomLabel");
 
     // 보고서의 "세로/가로 비율" (필요시 0.01씩 미세조정)
-    const SHEET_ASPECT = 1.32;   // 예: 1.28~1.36 사이
-    const SHEET_BASE_W = 1000;   // 내부 기준 가로(px) (임의값, 비율만 중요)
+    const SHEET_ASPECT = 1.32;
+    const SHEET_BASE_W = 1000;                 // 임의 기준 가로(px)
     const SHEET_BASE_H = Math.round(SHEET_BASE_W * SHEET_ASPECT);
 
     let mode = "fit";            // 'fit' | 'free'
